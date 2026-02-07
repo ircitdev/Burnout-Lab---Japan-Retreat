@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   MapPin, Calendar, Users, Brain, BatteryCharging, Mountain, ArrowRight, 
   CheckCircle, Menu, X, Moon, Sun, ChevronDown, Play, Download, 
-  Feather, Repeat, Coffee, Leaf, Shield, Waves, Mic, MicOff, Sparkles, Loader2, AlertCircle, RefreshCw
+  Feather, Repeat, Coffee, Leaf, Shield, Waves, Mic, MicOff, Sparkles, Loader2, AlertCircle, RefreshCw,
+  MessageCircle, Send, FileText
 } from 'lucide-react';
 import { GoogleGenAI, Modality } from "@google/genai";
 
@@ -18,6 +19,7 @@ interface ContentText {
   schedule: { title: string; subtitle: string; days: { day: string; title: string; desc: string }[] };
   team: { title: string; subtitle: string; coaches: { name: string; role: string; desc: string }[] };
   pricing: { title: string; subtitle: string; shared: string; single: string; popular: string; select: string; book: string; features: string[] };
+  quiz: { title: string; subtitle: string; button: string; bubbleBot1: string; bubbleUser: string; bubbleBot2: string; magnetTitle: string };
   download: { title: string; desc: string; button: string };
   modal: { title: string; desc: string; nameLabel: string; emailLabel: string; typeLabel: string; submit: string };
 }
@@ -74,11 +76,20 @@ const TRANSLATIONS: Record<Language, ContentText> = {
       title: "Ваши наставники",
       subtitle: "Синтез академической науки Гарварда и практического бизнес-коучинга.",
       coaches: [
-        { name: "Aksinia Mueller", role: "Stress Scientist, Harvard", desc: "Исследует биологические маркеры стресса. Учит управлять энергией на клеточном уровне." },
-        { name: "Juan Pablo Muñiz", role: "MBA, Co-founder", desc: "Эксперт по навигации кризисов. Работает с лидерами в моменты высокой турбулентности." },
-        { name: "Daniel Low", role: "PCC Coach", desc: "Мастер создания безопасного пространства для глубокой внутренней работы." },
-        { name: "Shane Tan", role: "Quiet Power Coach", desc: "Специалист по работе с «тихим выгоранием» и восстановлению самоценности." }
+        { name: "Аксинья Мюллер", role: "Stress Scientist, Harvard", desc: "Исследует биологические маркеры стресса. Учит управлять энергией на клеточном уровне." },
+        { name: "Хуан Пабло Муньис", role: "MBA, Co-founder", desc: "Эксперт по навигации кризисов. Работает с лидерами в моменты высокой турбулентности." },
+        { name: "Дэниел Лоу", role: "PCC Coach", desc: "Мастер создания безопасного пространства для глубокой внутренней работы." },
+        { name: "Шейн Тан", role: "Quiet Power Coach", desc: "Специалист по работе с «тихим выгоранием» и восстановлению самоценности." }
       ]
+    },
+    quiz: {
+      title: "На каком уровне ваше выгорание?",
+      subtitle: "Пройдите 3-минутный квиз в Telegram и получите PDF-гайд «Топ-5 техник мгновенного снятия стресса» бесплатно.",
+      button: "Запустить тест в Telegram",
+      bubbleBot1: "Привет! Измерим уровень кортизола?",
+      bubbleUser: "Да, давай начнем",
+      bubbleBot2: "Отлично! Держи свой гайд 🎁",
+      magnetTitle: "Гайд: Снятие стресса.pdf"
     },
     pricing: {
       title: "Инвестиция в состояние",
@@ -148,6 +159,15 @@ const TRANSLATIONS: Record<Language, ContentText> = {
         { name: "Shane Tan", role: "Quiet Power Coach", desc: "Specialist in navigating 'quiet burnout' and restoring self-worth." }
       ]
     },
+    quiz: {
+      title: "What is your Burnout Score?",
+      subtitle: "Take our 3-minute Telegram quiz and instantly get the 'Top 5 Stress Relief Protocols' PDF guide.",
+      button: "Start Quiz in Telegram",
+      bubbleBot1: "Hi! Ready to measure your cortisol risk?",
+      bubbleUser: "Yes, let's start",
+      bubbleBot2: "Great! Here is your free guide 🎁",
+      magnetTitle: "Guide: Stress Relief.pdf"
+    },
     pricing: {
       title: "Invest in Your State",
       subtitle: "Intimate group. Only 12 spots available for maximum comfort.",
@@ -216,6 +236,15 @@ const TRANSLATIONS: Record<Language, ContentText> = {
         { name: "Shane Tan", role: "Quiet Power Coach", desc: "Spezialist für 'stilles Burnout' und Selbstwertgefühl." }
       ]
     },
+    quiz: {
+      title: "Wie hoch ist Ihr Burnout-Risiko?",
+      subtitle: "Machen Sie das 3-Minuten-Quiz auf Telegram und erhalten Sie den PDF-Leitfaden 'Top 5 Techniken zum Stressabbau'.",
+      button: "Quiz in Telegram starten",
+      bubbleBot1: "Hallo! Wollen wir Ihr Cortisol messen?",
+      bubbleUser: "Ja, starten",
+      bubbleBot2: "Super! Hier ist dein Guide 🎁",
+      magnetTitle: "Guide: Stressabbau.pdf"
+    },
     pricing: {
       title: "Investition in sich",
       subtitle: "Kleine Gruppe. Nur 12 Plätze für maximalen Komfort.",
@@ -283,6 +312,15 @@ const TRANSLATIONS: Record<Language, ContentText> = {
         { name: "Daniel Low", role: "Coach PCC", desc: "Maître dans la création d'espaces sûrs pour le travail intérieur." },
         { name: "Shane Tan", role: "Quiet Power Coach", desc: "Spécialiste du 'burnout silencieux' et de l'estime de soi." }
       ]
+    },
+    quiz: {
+      title: "Quel est votre niveau d'épuisement?",
+      subtitle: "Répondez au quiz de 3 minutes sur Telegram et recevez gratuitement le guide 'Top 5 Techniques Anti-Stress'.",
+      button: "Lancer le quiz sur Telegram",
+      bubbleBot1: "Bonjour! Prêt à mesurer votre cortisol?",
+      bubbleUser: "Oui, allons-y",
+      bubbleBot2: "Parfait! Voici votre guide 🎁",
+      magnetTitle: "Guide: Anti-Stress.pdf"
     },
     pricing: {
       title: "Investissez en vous",
@@ -422,7 +460,96 @@ const Preloader: React.FC<{ fadeOut: boolean }> = ({ fadeOut }) => {
   );
 };
 
-// 3. Voice Assistant Component
+// 3. Quiz / Telegram Section Component
+const QuizSection: React.FC<{ t: ContentText['quiz'] }> = ({ t }) => {
+  return (
+    <section className="py-24 px-4 bg-stone-50 dark:bg-stone-950">
+      <div className="max-w-6xl mx-auto">
+        <Reveal>
+          <div className="bg-gradient-to-br from-indigo-900 via-purple-900 to-brand-900 rounded-[2.5rem] p-8 md:p-16 relative overflow-hidden shadow-2xl">
+            {/* Background Texture */}
+            <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.2),transparent_50%)]"></div>
+            
+            <div className="grid md:grid-cols-2 gap-12 items-center relative z-10">
+              {/* Left Column: Copy */}
+              <div>
+                <div className="inline-flex items-center px-4 py-2 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white/90 text-sm font-medium mb-6">
+                  <Sparkles size={16} className="mr-2 text-yellow-300" />
+                  Free Lead Magnet
+                </div>
+                <h2 className="text-3xl md:text-5xl font-serif text-white mb-6 leading-tight">
+                  {t.title}
+                </h2>
+                <p className="text-indigo-100 text-lg md:text-xl mb-10 leading-relaxed opacity-90">
+                  {t.subtitle}
+                </p>
+                <a 
+                  href="https://t.me/your_bot_link" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-8 py-4 bg-white text-indigo-900 rounded-xl font-bold hover:bg-indigo-50 transition-all transform hover:-translate-y-1 shadow-lg shadow-indigo-900/50"
+                >
+                  <MessageCircle size={20} className="mr-3" />
+                  {t.button}
+                </a>
+              </div>
+
+              {/* Right Column: Visual Gamification */}
+              <div className="relative animate-float">
+                {/* Phone Frame */}
+                <div className="mx-auto max-w-[320px] bg-stone-900/40 backdrop-blur-xl border border-white/10 rounded-[2.5rem] p-4 shadow-2xl rotate-3 transform hover:rotate-0 transition-all duration-500">
+                  <div className="bg-stone-900/50 rounded-[2rem] p-4 h-[380px] flex flex-col justify-end space-y-4 relative overflow-hidden">
+                    {/* Bot Header */}
+                    <div className="absolute top-0 left-0 right-0 p-4 bg-stone-800/50 border-b border-white/5 flex items-center space-x-3">
+                       <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center">
+                         <Brain size={16} className="text-white" />
+                       </div>
+                       <div>
+                         <div className="text-white text-xs font-bold">BurnoutBot AI</div>
+                         <div className="text-indigo-300 text-[10px]">bot</div>
+                       </div>
+                    </div>
+
+                    {/* Chat Bubbles */}
+                    <div className="flex justify-start">
+                      <div className="bg-white/10 backdrop-blur-md text-white/90 rounded-2xl rounded-tl-none py-3 px-4 text-xs max-w-[85%] shadow-sm animate-fade-in-up">
+                        {t.bubbleBot1}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <div className="bg-brand-600 text-white rounded-2xl rounded-tr-none py-3 px-4 text-xs max-w-[85%] shadow-sm animate-fade-in-up" style={{ animationDelay: '500ms' }}>
+                         {t.bubbleUser}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-start">
+                      <div className="bg-white/10 backdrop-blur-md text-white/90 rounded-2xl rounded-tl-none py-3 px-4 text-xs max-w-[85%] shadow-sm animate-fade-in-up" style={{ animationDelay: '1000ms' }}>
+                         <p className="mb-2">{t.bubbleBot2}</p>
+                         <div className="flex items-center space-x-2 bg-white/10 rounded-lg p-2 border border-white/10">
+                            <div className="w-8 h-8 bg-red-500/20 text-red-400 rounded-lg flex items-center justify-center">
+                              <FileText size={16} />
+                            </div>
+                            <span className="text-[10px] font-mono text-white/70">{t.magnetTitle}</span>
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Decorative Elements */}
+                <div className="absolute -top-10 -right-10 w-32 h-32 bg-rose-500 rounded-full blur-[80px] opacity-40"></div>
+                <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-indigo-500 rounded-full blur-[80px] opacity-40"></div>
+              </div>
+            </div>
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+};
+
+// 4. Voice Assistant Component
 const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ content, lang }) => {
   const [isActive, setIsActive] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -543,6 +670,12 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
         - We do not do "meditation"; we do "attentional control training".
         - We do not just "relax"; we "down-regulate cortisol and activate the parasympathetic response".
         
+        SPECIFIC ENGINEERING PROTOCOLS:
+        - Instead of "deep breathing", describe "Box Breathing (4-4-4-4) to mechanically stimulate the vagus nerve".
+        - Instead of "positive thinking", describe "Cognitive Reframing using Cognitive Behavioral Therapy (CBT) principles to rewrite neural pathways".
+        - Instead of "nature walks", describe "Phytoncide exposure in cedar forests to lower heart rate variability (HRV)".
+        - Instead of "hot springs", describe "Hydrotherapy for vasodilation and muscle recovery".
+
         Persona: Professional, grounded, scientifically literate, empathetic. NOT spiritual.
         Language: ${LANGUAGES.find(l => l.code === lang)?.label || lang}.
 
@@ -741,7 +874,7 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
 };
 
 
-// 4. Hero Component
+// 5. Hero Component
 const Hero: React.FC<{ 
   t: ContentText; 
   toggleModal: () => void; 
@@ -854,7 +987,7 @@ const Hero: React.FC<{
 };
 
 
-// 5. Main App Component
+// 6. Main App Component
 const BurnoutLanding = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1169,6 +1302,9 @@ const BurnoutLanding = () => {
           </div>
         </div>
       </section>
+
+      {/* Quiz / Telegram Section */}
+      <QuizSection t={t.quiz} />
 
       {/* Pricing */}
       <section id="pricing" className="py-32 bg-stone-900 text-stone-50 relative overflow-hidden">
