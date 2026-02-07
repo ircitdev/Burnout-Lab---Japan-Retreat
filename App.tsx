@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { GoogleGenAI, Modality, LiveServerMessage } from "@google/genai";
 import { 
   MapPin, Calendar, Users, Brain, BatteryCharging, Mountain, ArrowRight, 
   CheckCircle, Menu, X, Moon, Sun, ChevronDown, Play, Download, 
   Feather, Repeat, Coffee, Leaf, Shield, Waves, Mic, MicOff, Sparkles, Loader2, AlertCircle, RefreshCw,
   MessageCircle, Send, FileText
 } from 'lucide-react';
-import { GoogleGenAI, Modality } from "@google/genai";
 
 // --- TYPES ---
 
@@ -29,6 +29,13 @@ interface ContentText {
 const PDF_URL = "https://storage.googleapis.com/uspeshnyy-projects/burnout/Kochi%20Sakura%20-%20Burnout%20Bootcamp%20(April%202026).pdf";
 const VIDEO_BG_URL = "https://storage.googleapis.com/uspeshnyy-projects/burnout/hero.mp4";
 const VIDEO_BG_MOBILE_URL = "https://storage.googleapis.com/uspeshnyy-projects/burnout/hero_m.mp4";
+
+const COACH_IMAGES = [
+  "https://storage.googleapis.com/uspeshnyy-projects/burnout/aksinia.jpg",
+  "https://storage.googleapis.com/uspeshnyy-projects/burnout/Juan.jpg",
+  "https://storage.googleapis.com/uspeshnyy-projects/burnout/Daniel.jpg",
+  "https://storage.googleapis.com/uspeshnyy-projects/burnout/Shane.jpg"
+];
 
 const LANGUAGES: { code: Language; flag: string; label: string }[] = [
   { code: 'RU', flag: '🇷🇺', label: 'Русский' },
@@ -310,7 +317,7 @@ const TRANSLATIONS: Record<Language, ContentText> = {
         { name: "Aksinia Mueller", role: "Stress Scientist, Harvard", desc: "Recherche sur les marqueurs biologiques du stress." },
         { name: "Juan Pablo Muñiz", role: "MBA, Co-founder", desc: "Expert en navigation de crise pour les dirigeants." },
         { name: "Daniel Low", role: "Coach PCC", desc: "Maître dans la création d'espaces sûrs pour le travail intérieur." },
-        { name: "Shane Tan", role: "Quiet Power Coach", desc: "Spécialiste du 'burnout silencieux' et de l'estime de soi." }
+        { name: "Shane Tan", role: "Quiet Power Coach", desc: "Spezialist du 'burnout silencieux' et de l'estime de soi." }
       ]
     },
     quiz: {
@@ -358,7 +365,6 @@ function createBlob(data: Float32Array, sampleRate: number): { data: string, mim
     int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
   }
   
-  // Custom byte encoding to string to base64
   let binary = '';
   const bytes = new Uint8Array(int16.buffer);
   const len = bytes.byteLength;
@@ -455,6 +461,97 @@ const Preloader: React.FC<{ fadeOut: boolean }> = ({ fadeOut }) => {
       <div className="mt-12 h-[1px] w-48 bg-stone-900 overflow-hidden relative rounded-full">
          <div className="absolute inset-0 bg-stone-800 w-full"></div>
          <div className="h-full bg-gradient-to-r from-brand-900 to-brand-500 transition-all duration-[2000ms] ease-out w-full origin-left animate-grow"></div>
+      </div>
+    </div>
+  );
+};
+
+// 2.5 CountUp Component
+const CountUp: React.FC<{ end: string; duration?: number }> = ({ end, duration = 2000 }) => {
+  const [count, setCount] = useState(0);
+  const [isVisible, setIsVisible] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  
+  const numericValue = parseInt(end.replace(/\D/g, ''), 10);
+  const suffix = end.replace(/[0-9]/g, '');
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.1 }
+    );
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible) return;
+    
+    let startTime: number;
+    let animationFrame: number;
+
+    const animate = (timestamp: number) => {
+      if (!startTime) startTime = timestamp;
+      const progress = timestamp - startTime;
+      const percentage = Math.min(progress / duration, 1);
+      
+      const ease = 1 - Math.pow(1 - percentage, 3);
+      
+      setCount(Math.floor(ease * numericValue));
+
+      if (progress < duration) {
+        animationFrame = requestAnimationFrame(animate);
+      } else {
+        setCount(numericValue);
+      }
+    };
+
+    animationFrame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [isVisible, numericValue, duration]);
+
+  return <span ref={ref}>{count}{suffix}</span>;
+};
+
+// 2.8 Parallax Component
+const Parallax: React.FC<{ 
+  children: React.ReactNode; 
+  speed?: number; 
+  className?: string; 
+}> = ({ children, speed = 0.05, className = "" }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const targetRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (window.innerWidth < 768 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const handleScroll = () => {
+      if (!containerRef.current || !targetRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const viewHeight = window.innerHeight;
+      
+      if (rect.top < viewHeight && rect.bottom > 0) {
+        const scrollDist = (rect.top + rect.height / 2) - (viewHeight / 2);
+        const y = scrollDist * speed;
+        targetRef.current.style.transform = `translate3d(0, ${y}px, 0)`;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [speed]);
+
+  return (
+    <div ref={containerRef} className={className}>
+      <div ref={targetRef} className="will-change-transform h-full">
+        {children}
       </div>
     </div>
   );
@@ -603,7 +700,6 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
     let message = "Connection failed.";
     let isRetryable = true;
 
-    // Handle Specific Errors
     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
       message = "Microphone access denied. Please enable permissions.";
       isRetryable = false;
@@ -618,7 +714,6 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
       isRetryable = false;
     }
 
-    // Automatic Retry Logic
     if (isRetryable && retryCount < 3) {
       const nextRetry = retryCount + 1;
       setRetryCount(nextRetry);
@@ -629,13 +724,11 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
       }, 2000 * nextRetry);
     } else {
       setError(message);
-      setIsActive(false); // Ensure we are in a state where the error card can be displayed if we want, 
-                          // or let the UI handle the 'error && !isActive' state.
+      setIsActive(false);
     }
   };
 
   const connect = async (isRetry = false) => {
-    // Explicitly check for API Key before attempting connection
     const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
     if (!apiKey) {
       console.error("API Key is missing");
@@ -660,43 +753,49 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
       outputAudioContextRef.current = outputCtx;
       nextStartTimeRef.current = outputCtx.currentTime;
 
-      // Detailed System Instruction
       const systemInstruction = `
         You are the AI concierge for 'Burnout Lab Japan'.
         
-        PRIMARY DIRECTIVE:
-        You must frame every answer through the lens of NEUROBIOLOGY and an ENGINEERING APPROACH to wellbeing.
-        - We do not "heal souls"; we "regulate the autonomic nervous system".
-        - We do not do "meditation"; we do "attentional control training".
-        - We do not just "relax"; we "down-regulate cortisol and activate the parasympathetic response".
+        CORE PHILOSOPHY & UNIQUE SELLING POINTS:
+        1. ENGINEERING APPROACH TO WELLBEING:
+           We view the human body as a biological machine. Burnout is not a spiritual failure; it is a mechanical system failure (dysregulation). We provide the maintenance protocols to repair it. We use data, metrics, and physiological levers, not mystical concepts.
         
-        SPECIFIC ENGINEERING PROTOCOLS:
-        - Instead of "deep breathing", describe "Box Breathing (4-4-4-4) to mechanically stimulate the vagus nerve".
-        - Instead of "positive thinking", describe "Cognitive Reframing using Cognitive Behavioral Therapy (CBT) principles to rewrite neural pathways".
-        - Instead of "nature walks", describe "Phytoncide exposure in cedar forests to lower heart rate variability (HRV)".
-        - Instead of "hot springs", describe "Hydrotherapy for vasodilation and muscle recovery".
+        2. NEUROBIOLOGY OF STRESS:
+           Our curriculum is based on the HPA axis (Hypothalamus-Pituitary-Adrenal). We teach leaders how to manually switch from Sympathetic (Fight/Flight) to Parasympathetic (Rest/Digest) dominance using specific inputs (cold, heat, breath, optics).
 
-        Persona: Professional, grounded, scientifically literate, empathetic. NOT spiritual.
+        3. ENVIRONMENT AS MEDICINE:
+           The location in Kochi, Japan is not just "scenery"; it is a functional tool. The cedar forests emit phytoncides (NK cell activators). The onsens provide hydrostatic pressure and thermal shock proteins.
+        
+        PRIMARY DIRECTIVE:
+        Frame every answer through this scientific/engineering lens.
+        - NEVER say "healing", say "autonomic regulation".
+        - NEVER say "relax", say "down-regulate cortisol".
+        - NEVER say "meditate", say "attentional control training".
+        
+        SPECIFIC PROTOCOLS (THE TOOLKIT):
+        - "Box Breathing (4-4-4-4)" -> Vagus nerve stimulation.
+        - "Cognitive Reframing (CBT)" -> Neural pathway rewriting.
+        - "Non-Sleep Deep Rest (NSDR)" -> Sleep debt recovery.
+        - "Contrast Hydrotherapy" -> Vascular elasticity and dopamine baseline reset.
+
+        Persona: Senior Performance Engineer & Neuro-Coach. Professional, grounded, empathetic but precise.
         Language: ${LANGUAGES.find(l => l.code === lang)?.label || lang}.
 
-        GOAL: Guide the user to decide if the retreat is right for them. YOU MUST BE PROACTIVE.
-        
-        CONVERSATION FLOW:
-        - Answer the user's question concisely (<50 words).
-        - IMMEDIATELY ask a relevant follow-up question to deepen the conversation.
-        - Examples:
-          - If asked about the SCHEDULE: Ask "Are you more interested in the physical recovery protocols (fascia work, onsens) or the cognitive regulation techniques (attentional control)?"
-          - If asked about PRICING: Ask "Are you looking for a private sanctuary (Single Room) or comfortable shared accommodation?"
-          - If asked about LOCATION: Ask "Have you experienced the physiological benefits of forest bathing (phytoncides) before?"
-          - General: Ask "On a scale of 1-10, how high is your current cortisol load?"
+        GOAL: Guide the user to apply. YOU MUST BE PROACTIVE.
+
+        STRATEGY - THE "CONSULTATIVE DIAGNOSIS":
+        1. ACKNOWLEDGE: Use scientific terminology.
+        2. DIAGNOSE: Ask specific questions about their "system failure" (e.g., "Is your fatigue cognitive (decision fatigue) or metabolic (adrenal exhaustion)?").
+        3. PRESCRIBE: Connect their symptom to one of our Engineering Protocols.
 
         CONTEXT:
-        - Location: Kochi, Japan (leveraging phytoncides in cedar forests and thermoregulation in onsens).
+        - Dates: March 30 — April 7, 2026.
+        - Location: Kochi, Japan.
         - Price: $2,890 (Single), $2,390 (Shared).
 
         GUIDELINES:
-        - Keep answers short.
-        - Always end with a question.
+        - Keep answers short (<60 words).
+        - ALWAYS end with a diagnostic question.
       `;
 
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -772,7 +871,6 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
           },
           onclose: () => {
             console.log("Session closed");
-            // If we are not in an error state (retry logic), clean up
             if (retryCount === 0) cleanup();
             setIsActive(false);
             setIsConnecting(false);
@@ -794,8 +892,6 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
     return () => cleanup();
   }, [lang]); 
 
-  // Render Logic:
-  // 1. If not active, not connecting, and NO error -> Show Bubble
   if (!isActive && !isConnecting && !error) {
     return (
       <button 
@@ -808,12 +904,10 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
     );
   }
 
-  // 2. Otherwise (Active, Connecting, or Error) -> Show Card
   return (
     <div className="fixed bottom-6 right-6 z-50 animate-fade-in-up">
       <div className="bg-white/90 dark:bg-stone-900/95 backdrop-blur-xl border border-white/20 dark:border-stone-700 p-6 rounded-3xl shadow-2xl w-72 flex flex-col items-center text-center">
         
-        {/* Status Icon */}
         <div className="mb-4 relative">
           <div className={`w-16 h-16 rounded-full flex items-center justify-center transition-colors duration-500 ${
             error ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-500' :
@@ -833,7 +927,6 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
           </div>
         </div>
 
-        {/* Status Text */}
         <h3 className="font-serif text-xl font-medium text-stone-900 dark:text-white mb-1">
           {error ? "Connection Issue" : isConnecting ? "Connecting..." : "I'm Listening"}
         </h3>
@@ -842,7 +935,6 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
           {error ? error : isConnecting ? "Establishing secure connection" : `Ask me anything about the retreat in ${LANGUAGES.find(l => l.code === lang)?.label}`}
         </p>
 
-        {/* Action Button */}
         {error ? (
           <div className="flex gap-2 w-full">
             <button 
@@ -1017,7 +1109,7 @@ const BurnoutLanding = () => {
     else document.documentElement.classList.remove('dark');
     
     const handleScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isDarkMode]);
 
@@ -1039,8 +1131,8 @@ const BurnoutLanding = () => {
           <div className="flex justify-between items-center">
             {/* Logo */}
             <a href="#" className="flex items-center group">
-              <span className={`font-serif text-2xl font-bold tracking-tight transition-colors ${scrolled ? 'text-stone-900 dark:text-stone-50' : 'text-stone-900 dark:text-white'}`}>
-                Burnout<span className="text-brand-600 dark:text-brand-500 italic">Lab</span>
+              <span className={`font-serif text-2xl font-bold tracking-tight transition-colors ${scrolled ? 'text-stone-900 dark:text-stone-50' : 'text-white'}`}>
+                Burnout<span className={`italic transition-colors ${scrolled ? 'text-brand-600 dark:text-brand-500' : 'text-brand-400'}`}>Lab</span>
               </span>
             </a>
             
@@ -1052,18 +1144,18 @@ const BurnoutLanding = () => {
                 ['#team', t.nav.team],
                 ['#pricing', t.nav.pricing]
               ].map(([href, label]) => (
-                <a key={href} href={href} className="text-sm font-medium text-stone-600 dark:text-stone-300 hover:text-brand-600 dark:hover:text-brand-400 transition-colors tracking-wide">
+                <a key={href} href={href} className={`text-sm font-medium transition-colors tracking-wide ${scrolled ? 'text-stone-600 dark:text-stone-300 hover:text-brand-600 dark:hover:text-brand-400' : 'text-white/90 hover:text-white'}`}>
                   {label}
                 </a>
               ))}
               
-              <div className="h-4 w-px bg-stone-300 dark:bg-stone-700 mx-2"></div>
+              <div className={`h-4 w-px mx-2 ${scrolled ? 'bg-stone-300 dark:bg-stone-700' : 'bg-white/20'}`}></div>
 
               {/* Controls */}
               <div className="flex items-center space-x-4">
                 <button 
                   onClick={() => setIsDarkMode(!isDarkMode)} 
-                  className="p-2 text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100 transition-colors"
+                  className={`p-2 transition-colors ${scrolled ? 'text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100' : 'text-white/80 hover:text-white'}`}
                   aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
                 >
                   {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
@@ -1073,7 +1165,7 @@ const BurnoutLanding = () => {
                 <div className="relative">
                   <button 
                     onClick={() => setIsLangMenuOpen(!isLangMenuOpen)}
-                    className="flex items-center space-x-1 text-sm font-medium text-stone-700 dark:text-stone-200 hover:opacity-80 transition"
+                    className={`flex items-center space-x-1 text-sm font-medium hover:opacity-80 transition ${scrolled ? 'text-stone-700 dark:text-stone-200' : 'text-white'}`}
                     aria-label="Select language"
                     aria-expanded={isLangMenuOpen}
                   >
@@ -1096,7 +1188,7 @@ const BurnoutLanding = () => {
                   )}
                 </div>
 
-                <button onClick={toggleModal} className="px-6 py-2 bg-stone-900 dark:bg-white text-white dark:text-stone-900 text-sm font-medium rounded-full hover:shadow-lg hover:scale-105 active:scale-95 transition-all duration-300">
+                <button onClick={toggleModal} className={`px-6 py-2 text-sm font-medium rounded-full hover:shadow-lg hover:scale-105 active:scale-95 transition-all duration-300 ${scrolled ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900' : 'bg-white text-stone-900'}`}>
                   {t.nav.book}
                 </button>
               </div>
@@ -1106,14 +1198,14 @@ const BurnoutLanding = () => {
             <div className="md:hidden flex items-center space-x-4">
               <button 
                 onClick={() => setIsDarkMode(!isDarkMode)} 
-                className="text-stone-600 dark:text-stone-300"
+                className={`${scrolled ? 'text-stone-600 dark:text-stone-300' : 'text-white'}`}
                 aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
               >
                 {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
               </button>
               <button 
                 onClick={() => setIsMenuOpen(!isMenuOpen)} 
-                className="text-stone-900 dark:text-white"
+                className={`${scrolled ? 'text-stone-900 dark:text-white' : 'text-white'}`}
                 aria-label={isMenuOpen ? "Close menu" : "Open menu"}
               >
                 {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
@@ -1150,23 +1242,27 @@ const BurnoutLanding = () => {
       {/* Hero Section */}
       <Hero t={t} toggleModal={toggleModal} setIsVideoModalOpen={setIsVideoModalOpen} />
 
-      {/* Stats Banner */}
+      {/* Stats Banner with Parallax */}
       <section className="relative z-20 -mt-16 max-w-6xl mx-auto px-4">
-        <Reveal className="bg-white dark:bg-stone-900 rounded-3xl shadow-2xl shadow-stone-900/10 border border-stone-100 dark:border-stone-800 p-8 md:p-12 grid grid-cols-1 md:grid-cols-3 gap-8 divide-y md:divide-y-0 md:divide-x divide-stone-100 dark:divide-stone-800">
-           {[
-             { val: "4", label: t.stats.years },
-             { val: "850+", label: t.stats.participants },
-             { val: "30+", label: t.stats.experts }
-           ].map((stat, i) => (
-             <div key={i} className="text-center pt-8 md:pt-0">
-               <div className="text-4xl md:text-5xl font-serif text-stone-900 dark:text-white mb-2">{stat.val}</div>
-               <div className="text-sm font-medium text-stone-500 uppercase tracking-widest">{stat.label}</div>
-             </div>
-           ))}
-        </Reveal>
+        <Parallax speed={0.04}>
+          <Reveal className="bg-white dark:bg-stone-900 rounded-3xl shadow-2xl shadow-stone-900/10 border border-stone-100 dark:border-stone-800 p-8 md:p-12 grid grid-cols-1 md:grid-cols-3 gap-8 divide-y md:divide-y-0 md:divide-x divide-stone-100 dark:divide-stone-800">
+             {[
+               { val: "4", label: t.stats.years },
+               { val: "850+", label: t.stats.participants },
+               { val: "30+", label: t.stats.experts }
+             ].map((stat, i) => (
+               <div key={i} className="text-center pt-8 md:pt-0">
+                 <div className="text-4xl md:text-5xl font-serif text-stone-900 dark:text-white mb-2">
+                   <CountUp end={stat.val} />
+                 </div>
+                 <div className="text-sm font-medium text-stone-500 uppercase tracking-widest">{stat.label}</div>
+               </div>
+             ))}
+          </Reveal>
+        </Parallax>
       </section>
 
-      {/* Philosophy (About) */}
+      {/* Philosophy (About) with Parallax */}
       <section id="about" className="py-32 overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
            <div className="grid lg:grid-cols-2 gap-20 items-center">
@@ -1208,36 +1304,40 @@ const BurnoutLanding = () => {
              </div>
 
              <div className="relative">
-                <Reveal delay={200}>
-                  <div className="aspect-[3/4] rounded-[2rem] overflow-hidden relative shadow-2xl">
-                    <img 
-                      src="https://images.unsplash.com/photo-1528164344705-47542687000d?q=80&w=1200&auto=format&fit=crop" 
-                      alt="Japan Nature" 
-                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-1000"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-stone-900/60 to-transparent"></div>
-                    <div className="absolute bottom-8 left-8 right-8 text-white">
-                      <p className="font-serif italic text-2xl opacity-90">"Nature does not hurry, yet everything is accomplished."</p>
+                <Parallax speed={-0.05}>
+                  <Reveal delay={200}>
+                    <div className="aspect-[3/4] rounded-[2rem] overflow-hidden relative shadow-2xl">
+                      <img 
+                        src="https://images.unsplash.com/photo-1528164344705-47542687000d?q=80&w=1200&auto=format&fit=crop" 
+                        alt="Japan Nature" 
+                        className="w-full h-full object-cover hover:scale-105 transition-transform duration-1000"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-stone-900/60 to-transparent"></div>
+                      <div className="absolute bottom-8 left-8 right-8 text-white">
+                        <p className="font-serif italic text-2xl opacity-90">"Nature does not hurry, yet everything is accomplished."</p>
+                      </div>
                     </div>
-                  </div>
-                </Reveal>
+                  </Reveal>
+                </Parallax>
                 
                 {/* Floating Card */}
                 <div className="absolute -bottom-10 -left-10 md:bottom-20 md:-left-20 z-10 hidden md:block">
-                  <Reveal delay={400}>
-                    <div className="bg-white/80 dark:bg-stone-900/80 backdrop-blur-xl p-6 rounded-2xl shadow-xl border border-white/50 dark:border-stone-700 max-w-xs">
-                       <div className="flex items-center gap-4 mb-4">
-                         <div className="p-2 bg-green-100 dark:bg-green-900/30 text-green-700 rounded-lg"><Waves size={20}/></div>
-                         <div>
-                           <div className="text-xs text-stone-500 uppercase">Cortisol Level</div>
-                           <div className="font-bold text-stone-900 dark:text-white">-45% in 4 days</div>
+                  <Parallax speed={-0.12}>
+                    <Reveal delay={400}>
+                      <div className="bg-white/80 dark:bg-stone-900/80 backdrop-blur-xl p-6 rounded-2xl shadow-xl border border-white/50 dark:border-stone-700 max-w-xs">
+                         <div className="flex items-center gap-4 mb-4">
+                           <div className="p-2 bg-green-100 dark:bg-green-900/30 text-green-700 rounded-lg"><Waves size={20}/></div>
+                           <div>
+                             <div className="text-xs text-stone-500 uppercase">Cortisol Level</div>
+                             <div className="font-bold text-stone-900 dark:text-white">-45% in 4 days</div>
+                           </div>
                          </div>
-                       </div>
-                       <div className="h-1.5 w-full bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
-                         <div className="h-full bg-green-500 w-[55%] rounded-full"></div>
-                       </div>
-                    </div>
-                  </Reveal>
+                         <div className="h-1.5 w-full bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
+                           <div className="h-full bg-green-500 w-[55%] rounded-full"></div>
+                         </div>
+                      </div>
+                    </Reveal>
+                  </Parallax>
                 </div>
              </div>
            </div>
@@ -1256,18 +1356,20 @@ const BurnoutLanding = () => {
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {t.schedule.days.map((item, index) => (
-              <Reveal key={index} delay={index * 100} className="h-full">
-                <div className="h-full group bg-white dark:bg-stone-900 p-10 rounded-3xl shadow-sm hover:shadow-2xl transition-all duration-500 border border-stone-200/50 dark:border-stone-800 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-8 opacity-5 font-serif text-9xl group-hover:scale-125 group-hover:rotate-12 transition-transform duration-700 select-none">
-                    {index + 1}
+              <Parallax key={index} speed={index % 2 === 0 ? 0 : 0.04} className="h-full">
+                <Reveal delay={index * 100} className="h-full">
+                  <div className="h-full group bg-white dark:bg-stone-900 p-10 rounded-3xl shadow-sm hover:shadow-2xl transition-all duration-500 border border-stone-200/50 dark:border-stone-800 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-8 opacity-5 font-serif text-9xl group-hover:scale-125 group-hover:rotate-12 transition-transform duration-700 select-none">
+                      {index + 1}
+                    </div>
+                    <div className="inline-block px-3 py-1 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-500 text-xs font-bold uppercase tracking-wider mb-6">
+                      Day {item.day}
+                    </div>
+                    <h3 className="text-2xl font-serif text-stone-900 dark:text-white mb-4 group-hover:text-brand-600 transition-colors">{item.title}</h3>
+                    <p className="text-stone-600 dark:text-stone-400 leading-relaxed">{item.desc}</p>
                   </div>
-                  <div className="inline-block px-3 py-1 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-500 text-xs font-bold uppercase tracking-wider mb-6">
-                    Day {item.day}
-                  </div>
-                  <h3 className="text-2xl font-serif text-stone-900 dark:text-white mb-4 group-hover:text-brand-600 transition-colors">{item.title}</h3>
-                  <p className="text-stone-600 dark:text-stone-400 leading-relaxed">{item.desc}</p>
-                </div>
-              </Reveal>
+                </Reveal>
+              </Parallax>
             ))}
           </div>
         </div>
@@ -1283,21 +1385,23 @@ const BurnoutLanding = () => {
 
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-12">
             {t.team.coaches.map((coach, i) => (
-              <Reveal key={i} delay={i * 100}>
-                <div className="group">
-                  <div className="mb-6 overflow-hidden rounded-2xl bg-stone-100 aspect-[4/5] relative">
-                    <img 
-                      src={`https://api.dicebear.com/7.x/notionists/svg?seed=${coach.name}&backgroundColor=e5e5e5`} 
-                      alt={coach.name} 
-                      className="w-full h-full object-cover mix-blend-multiply opacity-80 group-hover:scale-105 group-hover:opacity-100 transition-all duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-stone-900/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <Parallax key={i} speed={i % 2 === 0 ? 0.02 : 0.06} className="h-full">
+                <Reveal delay={i * 100}>
+                  <div className="group">
+                    <div className="mb-6 overflow-hidden rounded-2xl bg-stone-100 aspect-[4/5] relative">
+                      <img 
+                        src={COACH_IMAGES[i]} 
+                        alt={coach.name} 
+                        className="w-full h-full object-cover filter grayscale group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700 ease-out"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-stone-900/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                    </div>
+                    <h3 className="text-xl font-medium text-stone-900 dark:text-white">{coach.name}</h3>
+                    <p className="text-brand-600 text-sm font-medium uppercase tracking-wide mb-3">{coach.role}</p>
+                    <p className="text-sm text-stone-500 dark:text-stone-400 leading-relaxed">{coach.desc}</p>
                   </div>
-                  <h3 className="text-xl font-medium text-stone-900 dark:text-white">{coach.name}</h3>
-                  <p className="text-brand-600 text-sm font-medium uppercase tracking-wide mb-3">{coach.role}</p>
-                  <p className="text-sm text-stone-500 dark:text-stone-400 leading-relaxed">{coach.desc}</p>
-                </div>
-              </Reveal>
+                </Reveal>
+              </Parallax>
             ))}
           </div>
         </div>
@@ -1324,51 +1428,55 @@ const BurnoutLanding = () => {
 
           <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
             {/* Card 1 */}
-            <Reveal>
-              <div className="bg-white/5 backdrop-blur-lg border border-white/10 rounded-3xl p-10 hover:bg-white/10 transition-colors duration-300 h-full flex flex-col">
-                <div className="mb-8">
-                  <h3 className="text-2xl font-serif mb-2 text-white">{t.pricing.shared}</h3>
-                  <div className="text-sm text-stone-400">{t.pricing.subtitle}</div>
+            <Parallax speed={0.02}>
+              <Reveal>
+                <div className="bg-white/5 backdrop-blur-lg border border-white/10 rounded-3xl p-10 hover:bg-white/10 transition-colors duration-300 h-full flex flex-col">
+                  <div className="mb-8">
+                    <h3 className="text-2xl font-serif mb-2 text-white">{t.pricing.shared}</h3>
+                    <div className="text-sm text-stone-400">{t.pricing.subtitle}</div>
+                  </div>
+                  <div className="text-5xl font-light text-white mb-8">$2,390</div>
+                  <div className="flex-grow space-y-4 mb-10">
+                    {t.pricing.features.slice(0, 4).map((f, i) => (
+                      <div key={i} className="flex items-start text-stone-300">
+                        <CheckCircle size={18} className="text-stone-500 mr-3 mt-1 flex-shrink-0" />
+                        <span>{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={toggleModal} className="w-full py-4 border border-white/20 hover:bg-white hover:text-stone-900 text-white rounded-xl transition-all duration-300">
+                    {t.pricing.select}
+                  </button>
                 </div>
-                <div className="text-5xl font-light text-white mb-8">$2,390</div>
-                <div className="flex-grow space-y-4 mb-10">
-                  {t.pricing.features.slice(0, 4).map((f, i) => (
-                    <div key={i} className="flex items-start text-stone-300">
-                      <CheckCircle size={18} className="text-stone-500 mr-3 mt-1 flex-shrink-0" />
-                      <span>{f}</span>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={toggleModal} className="w-full py-4 border border-white/20 hover:bg-white hover:text-stone-900 text-white rounded-xl transition-all duration-300">
-                  {t.pricing.select}
-                </button>
-              </div>
-            </Reveal>
+              </Reveal>
+            </Parallax>
 
             {/* Card 2 (Highlighted) */}
-            <Reveal delay={100}>
-              <div className="bg-white text-stone-900 rounded-3xl p-10 relative shadow-2xl shadow-black/20 transform hover:-translate-y-2 transition-transform duration-300 h-full flex flex-col">
-                <div className="absolute top-0 right-0 bg-brand-600 text-white text-xs font-bold px-4 py-2 rounded-bl-xl rounded-tr-2xl uppercase tracking-wider">
-                  {t.pricing.popular}
+            <Parallax speed={0.06}>
+              <Reveal delay={100}>
+                <div className="bg-white text-stone-900 rounded-3xl p-10 relative shadow-2xl shadow-black/20 transform hover:-translate-y-2 transition-transform duration-300 h-full flex flex-col">
+                  <div className="absolute top-0 right-0 bg-brand-600 text-white text-xs font-bold px-4 py-2 rounded-bl-xl rounded-tr-2xl uppercase tracking-wider">
+                    {t.pricing.popular}
+                  </div>
+                  <div className="mb-8">
+                    <h3 className="text-2xl font-serif mb-2">{t.pricing.single}</h3>
+                    <div className="text-sm text-stone-500">Maximum privacy</div>
+                  </div>
+                  <div className="text-5xl font-light text-stone-900 mb-8">$2,890</div>
+                  <div className="flex-grow space-y-4 mb-10">
+                    {t.pricing.features.map((f, i) => (
+                      <div key={i} className="flex items-start text-stone-700">
+                        <CheckCircle size={18} className="text-brand-600 mr-3 mt-1 flex-shrink-0" />
+                        <span>{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={toggleModal} className="w-full py-4 bg-stone-900 hover:bg-brand-600 text-white rounded-xl transition-colors duration-300 font-medium">
+                    {t.pricing.book}
+                  </button>
                 </div>
-                <div className="mb-8">
-                  <h3 className="text-2xl font-serif mb-2">{t.pricing.single}</h3>
-                  <div className="text-sm text-stone-500">Maximum privacy</div>
-                </div>
-                <div className="text-5xl font-light text-stone-900 mb-8">$2,890</div>
-                <div className="flex-grow space-y-4 mb-10">
-                  {t.pricing.features.map((f, i) => (
-                    <div key={i} className="flex items-start text-stone-700">
-                      <CheckCircle size={18} className="text-brand-600 mr-3 mt-1 flex-shrink-0" />
-                      <span>{f}</span>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={toggleModal} className="w-full py-4 bg-stone-900 hover:bg-brand-600 text-white rounded-xl transition-colors duration-300 font-medium">
-                  {t.pricing.book}
-                </button>
-              </div>
-            </Reveal>
+              </Reveal>
+            </Parallax>
           </div>
         </div>
       </section>
