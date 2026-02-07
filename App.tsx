@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   MapPin, Calendar, Users, Brain, BatteryCharging, Mountain, ArrowRight, 
   CheckCircle, Menu, X, Moon, Sun, ChevronDown, Play, Download, 
-  Feather, Repeat, Coffee, Leaf, Shield, Waves
+  Feather, Repeat, Coffee, Leaf, Shield, Waves, Mic, MicOff, Sparkles, Loader2, AlertCircle, RefreshCw
 } from 'lucide-react';
+import { GoogleGenAI, Modality } from "@google/genai";
 
 // --- TYPES ---
 
@@ -309,6 +310,60 @@ const TRANSLATIONS: Record<Language, ContentText> = {
   }
 };
 
+// --- AUDIO UTILS ---
+
+function createBlob(data: Float32Array, sampleRate: number): { data: string, mimeType: string } {
+  const l = data.length;
+  const int16 = new Int16Array(l);
+  for (let i = 0; i < l; i++) {
+    const s = Math.max(-1, Math.min(1, data[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  
+  // Custom byte encoding to string to base64
+  let binary = '';
+  const bytes = new Uint8Array(int16.buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  
+  return {
+    data: btoa(binary),
+    mimeType: `audio/pcm;rate=${sampleRate}`,
+  };
+}
+
+function decodeBase64(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
+  }
+  return buffer;
+}
+
+
 // --- COMPONENTS ---
 
 // 1. Reveal Animation Component
@@ -345,7 +400,312 @@ const Reveal: React.FC<{ children?: React.ReactNode; delay?: number; className?:
   );
 };
 
-// 2. Main App Component
+// 2. Voice Assistant Component
+const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ content, lang }) => {
+  const [isActive, setIsActive] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  
+  const inputAudioContextRef = useRef<AudioContext | null>(null);
+  const outputAudioContextRef = useRef<AudioContext | null>(null);
+  const sessionRef = useRef<any>(null);
+  const nextStartTimeRef = useRef<number>(0);
+  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const retryTimeoutRef = useRef<any>(null);
+
+  const cleanup = () => {
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+
+    sourcesRef.current.forEach(source => {
+      try { source.stop(); } catch(e) {}
+    });
+    sourcesRef.current.clear();
+
+    if (inputAudioContextRef.current) {
+      inputAudioContextRef.current.close();
+      inputAudioContextRef.current = null;
+    }
+    if (outputAudioContextRef.current) {
+      outputAudioContextRef.current.close();
+      outputAudioContextRef.current = null;
+    }
+    
+    sessionRef.current = null;
+  };
+
+  const disconnect = () => {
+    cleanup();
+    setIsActive(false);
+    setIsConnecting(false);
+    setError(null);
+    setRetryCount(0);
+  };
+
+  const handleError = (err: any) => {
+    cleanup();
+    setIsConnecting(false);
+    
+    console.error("Voice Assistant Error:", err);
+
+    let message = "Connection failed.";
+    let isRetryable = true;
+
+    // Handle Specific Errors
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      message = "Microphone access denied. Please enable permissions.";
+      isRetryable = false;
+    } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+      message = "No microphone found on this device.";
+      isRetryable = false;
+    } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+      message = "Microphone is busy or unavailable.";
+      isRetryable = false;
+    } else if (err.message && (err.message.includes("API Key") || err.message.includes("403"))) {
+      message = "Configuration Error: Invalid API Key.";
+      isRetryable = false;
+    }
+
+    // Automatic Retry Logic
+    if (isRetryable && retryCount < 3) {
+      const nextRetry = retryCount + 1;
+      setRetryCount(nextRetry);
+      setError(`${message} Retrying... (${nextRetry}/3)`);
+      
+      retryTimeoutRef.current = setTimeout(() => {
+        connect(true);
+      }, 2000 * nextRetry);
+    } else {
+      setError(message);
+      setIsActive(false); // Ensure we are in a state where the error card can be displayed if we want, 
+                          // or let the UI handle the 'error && !isActive' state.
+    }
+  };
+
+  const connect = async (isRetry = false) => {
+    if (!isRetry) {
+      setError(null);
+      setRetryCount(0);
+    }
+    setIsConnecting(true);
+
+    // Safely access API key
+    const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
+    if (!apiKey) {
+      handleError(new Error("Missing API Key"));
+      return;
+    }
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const inputCtx = new AudioContextClass({ sampleRate: 16000 });
+      const outputCtx = new AudioContextClass({ sampleRate: 24000 });
+      
+      inputAudioContextRef.current = inputCtx;
+      outputAudioContextRef.current = outputCtx;
+      nextStartTimeRef.current = outputCtx.currentTime;
+
+      // Detailed System Instruction
+      const systemInstruction = `
+        You are the AI concierge for 'Burnout Lab Japan'.
+        Persona: Professional, grounded, scientifically literate, empathetic. NOT spiritual.
+        Language: ${LANGUAGES.find(l => l.code === lang)?.label || lang}.
+
+        GOAL: Guide the user to decide if the retreat is right for them. Proactively ask follow-up questions.
+
+        CONTEXT:
+        - Science-First: Engineering approach to wellbeing. No fluff.
+        - Neurobiology of Stress: Focus on cortisol and nervous system regulation.
+        - Location: Kochi, Japan (cedar forests, onsens).
+        - Price: $2,890 (Single), $2,390 (Shared).
+
+        GUIDELINES:
+        - Concise answers (<50 words).
+        - ALWAYS ASK A FOLLOW-UP QUESTION to clarify needs.
+        - Frame meditation as "attentional control training".
+      `;
+
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
+
+      const sessionPromise = ai.live.connect({
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        config: {
+          responseModalities: [Modality.AUDIO],
+          systemInstruction: systemInstruction,
+        },
+        callbacks: {
+          onopen: () => {
+            console.log("Session opened");
+            setIsActive(true);
+            setIsConnecting(false);
+            setError(null);
+            setRetryCount(0);
+            
+            const source = inputCtx.createMediaStreamSource(stream);
+            const highPass = inputCtx.createBiquadFilter();
+            highPass.type = 'highpass';
+            highPass.frequency.value = 85;
+
+            const scriptProcessor = inputCtx.createScriptProcessor(2048, 1, 1);
+            
+            scriptProcessor.onaudioprocess = (e) => {
+              const inputData = e.inputBuffer.getChannelData(0);
+              const pcmBlob = createBlob(inputData, inputCtx.sampleRate);
+              sessionPromise.then(session => {
+                 session.sendRealtimeInput({ media: pcmBlob });
+              });
+            };
+            
+            source.connect(highPass);
+            highPass.connect(scriptProcessor);
+            scriptProcessor.connect(inputCtx.destination);
+          },
+          onmessage: async (message: any) => {
+            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (base64Audio) {
+              const audioBytes = decodeBase64(base64Audio);
+              const audioBuffer = await decodeAudioData(audioBytes, outputCtx, 24000, 1);
+              
+              const now = outputCtx.currentTime;
+              const startTime = Math.max(now, nextStartTimeRef.current);
+              
+              const source = outputCtx.createBufferSource();
+              source.buffer = audioBuffer;
+              source.connect(outputCtx.destination);
+              
+              source.onended = () => {
+                sourcesRef.current.delete(source);
+              };
+              
+              source.start(startTime);
+              nextStartTimeRef.current = startTime + audioBuffer.duration;
+              sourcesRef.current.add(source);
+            }
+            
+             if (message.serverContent?.interrupted) {
+                sourcesRef.current.forEach(s => s.stop());
+                sourcesRef.current.clear();
+                nextStartTimeRef.current = outputCtx.currentTime;
+             }
+          },
+          onclose: () => {
+            console.log("Session closed");
+            // If we are not in an error state (retry logic), clean up
+            if (retryCount === 0) cleanup();
+            setIsActive(false);
+            setIsConnecting(false);
+          },
+          onerror: (err) => {
+            handleError(err);
+          }
+        }
+      });
+      
+      sessionRef.current = sessionPromise;
+
+    } catch (e) {
+      handleError(e);
+    }
+  };
+
+  useEffect(() => {
+    return () => cleanup();
+  }, [lang]); 
+
+  // Render Logic:
+  // 1. If not active, not connecting, and NO error -> Show Bubble
+  if (!isActive && !isConnecting && !error) {
+    return (
+      <button 
+        onClick={() => connect(false)}
+        className="fixed bottom-6 right-6 z-40 w-14 h-14 bg-brand-600 hover:bg-brand-700 text-white rounded-full shadow-xl flex items-center justify-center transition-transform hover:scale-110 active:scale-95 group"
+        aria-label="Start Voice Assistant"
+      >
+        <Sparkles size={24} className="group-hover:animate-pulse" />
+      </button>
+    );
+  }
+
+  // 2. Otherwise (Active, Connecting, or Error) -> Show Card
+  return (
+    <div className="fixed bottom-6 right-6 z-50 animate-fade-in-up">
+      <div className="bg-white/90 dark:bg-stone-900/95 backdrop-blur-xl border border-white/20 dark:border-stone-700 p-6 rounded-3xl shadow-2xl w-72 flex flex-col items-center text-center">
+        
+        {/* Status Icon */}
+        <div className="mb-4 relative">
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center transition-colors duration-500 ${
+            error ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-500' :
+            isConnecting ? 'bg-stone-200 dark:bg-stone-800' : 
+            'bg-brand-100 dark:bg-brand-900/30 text-brand-600'
+          }`}>
+            {error ? (
+              <AlertCircle size={28} />
+            ) : isConnecting ? (
+              <Loader2 size={24} className="animate-spin text-stone-500" />
+            ) : (
+              <div className="relative">
+                 <Mic size={28} />
+                 <div className="absolute inset-0 bg-brand-500 rounded-full opacity-20 animate-ping"></div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Status Text */}
+        <h3 className="font-serif text-xl font-medium text-stone-900 dark:text-white mb-1">
+          {error ? "Connection Issue" : isConnecting ? "Connecting..." : "I'm Listening"}
+        </h3>
+        
+        <p className={`text-xs mb-6 px-2 ${error ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"}`}>
+          {error ? error : isConnecting ? "Establishing secure connection" : `Ask me anything about the retreat in ${LANGUAGES.find(l => l.code === lang)?.label}`}
+        </p>
+
+        {/* Action Button */}
+        {error ? (
+          <div className="flex gap-2 w-full">
+            <button 
+              onClick={disconnect}
+              className="flex-1 py-3 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-900 dark:text-white rounded-xl text-sm font-medium transition-colors"
+            >
+              Close
+            </button>
+            <button 
+              onClick={() => connect(false)}
+              className="flex-1 py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              <RefreshCw size={14} />
+              Retry
+            </button>
+          </div>
+        ) : (
+          <button 
+            onClick={disconnect}
+            className="w-full py-3 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-900 dark:text-white rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+          >
+            <MicOff size={16} />
+            End Session
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+// 3. Main App Component
 const BurnoutLanding = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -408,6 +768,7 @@ const BurnoutLanding = () => {
                 <button 
                   onClick={() => setIsDarkMode(!isDarkMode)} 
                   className="p-2 text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100 transition-colors"
+                  aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
                 >
                   {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
                 </button>
@@ -417,6 +778,8 @@ const BurnoutLanding = () => {
                   <button 
                     onClick={() => setIsLangMenuOpen(!isLangMenuOpen)}
                     className="flex items-center space-x-1 text-sm font-medium text-stone-700 dark:text-stone-200 hover:opacity-80 transition"
+                    aria-label="Select language"
+                    aria-expanded={isLangMenuOpen}
                   >
                     <span>{lang}</span>
                     <ChevronDown size={14} className={`transform transition-transform ${isLangMenuOpen ? 'rotate-180' : ''}`} />
@@ -448,10 +811,15 @@ const BurnoutLanding = () => {
               <button 
                 onClick={() => setIsDarkMode(!isDarkMode)} 
                 className="text-stone-600 dark:text-stone-300"
+                aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
               >
                 {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
               </button>
-              <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="text-stone-900 dark:text-white">
+              <button 
+                onClick={() => setIsMenuOpen(!isMenuOpen)} 
+                className="text-stone-900 dark:text-white"
+                aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+              >
                 {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
               </button>
             </div>
@@ -487,7 +855,7 @@ const BurnoutLanding = () => {
       <header className="relative h-screen min-h-[800px] flex items-center justify-center overflow-hidden">
         {/* Background Video */}
         <div className="absolute inset-0 z-0">
-          <video autoPlay loop muted playsInline className="w-full h-full object-cover scale-105 animate-float-slow">
+          <video autoPlay loop muted playsInline className="w-full h-full object-cover scale-105 animate-float-slow" aria-hidden="true">
             <source src={VIDEO_BG_MOBILE_URL} media="(max-width: 768px)" />
             <source src={VIDEO_BG_URL} />
           </video>
@@ -797,17 +1165,24 @@ const BurnoutLanding = () => {
              ))}
           </div>
         </div>
-        <div className="max-w-7xl mx-auto px-4 mt-16 pt-8 border-t border-stone-900 flex justify-between items-center text-xs text-stone-600">
+        <div className="max-w-7xl mx-auto px-4 mt-16 pt-8 border-t border-stone-900 flex justify-between items-center text-xs text-stone-500">
            <p>© 2026 Burnout Lab. All rights reserved.</p>
            <p>Designed with science.</p>
         </div>
       </footer>
+      
+      {/* Voice Assistant */}
+      <VoiceAssistant content={t} lang={lang} />
 
       {/* Booking Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-stone-900/80 backdrop-blur-sm animate-fade-in-up">
           <div className="bg-white dark:bg-stone-900 rounded-3xl p-8 max-w-lg w-full relative shadow-2xl border border-stone-100 dark:border-stone-800">
-            <button onClick={toggleModal} className="absolute top-6 right-6 text-stone-400 hover:text-stone-900 dark:hover:text-white transition-colors">
+            <button 
+              onClick={toggleModal} 
+              className="absolute top-6 right-6 text-stone-400 hover:text-stone-900 dark:hover:text-white transition-colors"
+              aria-label="Close modal"
+            >
               <X size={24} />
             </button>
             
@@ -818,16 +1193,16 @@ const BurnoutLanding = () => {
             
             <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); alert("Thank you! We'll be in touch."); toggleModal(); }}>
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-stone-500 mb-2">{t.modal.nameLabel}</label>
-                <input required type="text" className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border-transparent focus:bg-white focus:border-brand-500 focus:ring-0 transition-all text-stone-900 dark:text-white" />
+                <label htmlFor="name" className="block text-xs font-bold uppercase tracking-wider text-stone-500 mb-2">{t.modal.nameLabel}</label>
+                <input id="name" required type="text" className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border-transparent focus:bg-white focus:border-brand-500 focus:ring-0 transition-all text-stone-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-stone-500 mb-2">{t.modal.emailLabel}</label>
-                <input required type="email" className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border-transparent focus:bg-white focus:border-brand-500 focus:ring-0 transition-all text-stone-900 dark:text-white" />
+                <label htmlFor="email" className="block text-xs font-bold uppercase tracking-wider text-stone-500 mb-2">{t.modal.emailLabel}</label>
+                <input id="email" required type="email" className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border-transparent focus:bg-white focus:border-brand-500 focus:ring-0 transition-all text-stone-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-stone-500 mb-2">{t.modal.typeLabel}</label>
-                <select className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border-transparent focus:bg-white focus:border-brand-500 focus:ring-0 transition-all text-stone-900 dark:text-white appearance-none">
+                <label htmlFor="room-type" className="block text-xs font-bold uppercase tracking-wider text-stone-500 mb-2">{t.modal.typeLabel}</label>
+                <select id="room-type" className="w-full px-4 py-3 rounded-xl bg-stone-50 dark:bg-stone-800 border-transparent focus:bg-white focus:border-brand-500 focus:ring-0 transition-all text-stone-900 dark:text-white appearance-none">
                   <option value="single">Single Room ($2,890)</option>
                   <option value="shared">Shared Room ($2,390)</option>
                 </select>
@@ -843,7 +1218,11 @@ const BurnoutLanding = () => {
       {/* Video Modal */}
       {isVideoModalOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/95 animate-fade-in-up p-4">
-           <button onClick={() => setIsVideoModalOpen(false)} className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors z-50">
+           <button 
+             onClick={() => setIsVideoModalOpen(false)} 
+             className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors z-50"
+             aria-label="Close video"
+           >
               <X size={32} />
            </button>
            <div className="w-full max-w-6xl aspect-video rounded-xl overflow-hidden shadow-2xl bg-black relative border border-stone-800">
@@ -852,6 +1231,7 @@ const BurnoutLanding = () => {
                 className="absolute top-0 left-0 w-full h-full"
                 allow="autoplay; fullscreen; picture-in-picture"
                 allowFullScreen
+                title="Burnout Bootcamp Video"
               ></iframe>
            </div>
         </div>
