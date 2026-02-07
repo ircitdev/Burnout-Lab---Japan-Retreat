@@ -74,10 +74,10 @@ const TRANSLATIONS: Record<Language, ContentText> = {
       title: "Ваши наставники",
       subtitle: "Синтез академической науки Гарварда и практического бизнес-коучинга.",
       coaches: [
-        { name: "Аксинья Мюллер", role: "Stress Scientist, Harvard", desc: "Исследует биологические маркеры стресса. Учит управлять энергией на клеточном уровне." },
-        { name: "Хуан Пабло Муньис", role: "MBA, Co-founder", desc: "Эксперт по навигации кризисов. Работает с лидерами в моменты высокой турбулентности." },
-        { name: "Дэниел Лоу", role: "PCC Coach", desc: "Мастер создания безопасного пространства для глубокой внутренней работы." },
-        { name: "Шейн Тан", role: "Quiet Power Coach", desc: "Специалист по работе с «тихим выгоранием» и восстановлению самоценности." }
+        { name: "Aksinia Mueller", role: "Stress Scientist, Harvard", desc: "Исследует биологические маркеры стресса. Учит управлять энергией на клеточном уровне." },
+        { name: "Juan Pablo Muñiz", role: "MBA, Co-founder", desc: "Эксперт по навигации кризисов. Работает с лидерами в моменты высокой турбулентности." },
+        { name: "Daniel Low", role: "PCC Coach", desc: "Мастер создания безопасного пространства для глубокой внутренней работы." },
+        { name: "Shane Tan", role: "Quiet Power Coach", desc: "Специалист по работе с «тихим выгоранием» и восстановлению самоценности." }
       ]
     },
     pricing: {
@@ -292,7 +292,7 @@ const TRANSLATIONS: Record<Language, ContentText> = {
       popular: "Choix des Leaders",
       select: "Sélectionner",
       book: "Réserver Single",
-      features: ["7 nuits d'hébergement", "Transferts Land Cruiser", "Nutrition soignée", "Carte de Résilience", "Chambre privée", "Confidentialité totale"]
+      features: ["7 nights accommodation", "Land Cruiser transfers", "Curated nutrition", "Resilience Map", "Private room", "Total confidentiality"]
     },
     download: {
       title: "Explorer les détails",
@@ -391,8 +391,8 @@ const Reveal: React.FC<{ children?: React.ReactNode; delay?: number; className?:
     <div
       ref={ref}
       style={{ transitionDelay }}
-      className={`transition-all duration-1000 cubic-bezier(0.2, 0.8, 0.2, 1) transform ${
-        isVisible ? 'opacity-100 translate-y-0 blur-0' : 'opacity-0 translate-y-12 blur-sm'
+      className={`transition-all duration-1000 ease-[cubic-bezier(0.2,0.8,0.2,1)] transform ${
+        isVisible ? 'opacity-100 translate-y-0 blur-0' : 'opacity-0 translate-y-8 blur-sm'
       } ${className}`}
     >
       {children}
@@ -400,7 +400,29 @@ const Reveal: React.FC<{ children?: React.ReactNode; delay?: number; className?:
   );
 };
 
-// 2. Voice Assistant Component
+// 2. Preloader Component
+const Preloader: React.FC<{ fadeOut: boolean }> = ({ fadeOut }) => {
+  return (
+    <div className={`fixed inset-0 z-[100] bg-stone-950 flex flex-col items-center justify-center transition-opacity duration-1000 ${fadeOut ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+      <div className="relative mb-6">
+        <Brain size={64} className="text-brand-600 animate-pulse-slow relative z-10" strokeWidth={1} />
+        <div className="absolute inset-0 bg-brand-500 blur-3xl opacity-20 animate-pulse"></div>
+      </div>
+      <h1 className="text-3xl md:text-4xl font-serif text-white tracking-widest uppercase mb-2">
+        Burnout<span className="text-brand-600 italic">Lab</span>
+      </h1>
+      <p className="text-stone-500 text-xs tracking-[0.4em] uppercase font-light">Science of Reset</p>
+      
+      {/* Progress Line */}
+      <div className="mt-12 h-[1px] w-48 bg-stone-900 overflow-hidden relative rounded-full">
+         <div className="absolute inset-0 bg-stone-800 w-full"></div>
+         <div className="h-full bg-gradient-to-r from-brand-900 to-brand-500 transition-all duration-[2000ms] ease-out w-full origin-left animate-grow"></div>
+      </div>
+    </div>
+  );
+};
+
+// 3. Voice Assistant Component
 const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ content, lang }) => {
   const [isActive, setIsActive] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -486,18 +508,19 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
   };
 
   const connect = async (isRetry = false) => {
+    // Explicitly check for API Key before attempting connection
+    const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
+    if (!apiKey) {
+      console.error("API Key is missing");
+      setError("Configuration Error: API Key is missing. Please check your environment variables.");
+      return;
+    }
+
     if (!isRetry) {
       setError(null);
       setRetryCount(0);
     }
     setIsConnecting(true);
-
-    // Safely access API key
-    const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
-    if (!apiKey) {
-      handleError(new Error("Missing API Key"));
-      return;
-    }
 
     try {
       const ai = new GoogleGenAI({ apiKey });
@@ -513,21 +536,34 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
       // Detailed System Instruction
       const systemInstruction = `
         You are the AI concierge for 'Burnout Lab Japan'.
+        
+        PRIMARY DIRECTIVE:
+        You must frame every answer through the lens of NEUROBIOLOGY and an ENGINEERING APPROACH to wellbeing.
+        - We do not "heal souls"; we "regulate the autonomic nervous system".
+        - We do not do "meditation"; we do "attentional control training".
+        - We do not just "relax"; we "down-regulate cortisol and activate the parasympathetic response".
+        
         Persona: Professional, grounded, scientifically literate, empathetic. NOT spiritual.
         Language: ${LANGUAGES.find(l => l.code === lang)?.label || lang}.
 
-        GOAL: Guide the user to decide if the retreat is right for them. Proactively ask follow-up questions.
+        GOAL: Guide the user to decide if the retreat is right for them. YOU MUST BE PROACTIVE.
+        
+        CONVERSATION FLOW:
+        - Answer the user's question concisely (<50 words).
+        - IMMEDIATELY ask a relevant follow-up question to deepen the conversation.
+        - Examples:
+          - If asked about the SCHEDULE: Ask "Are you more interested in the physical recovery protocols (fascia work, onsens) or the cognitive regulation techniques (attentional control)?"
+          - If asked about PRICING: Ask "Are you looking for a private sanctuary (Single Room) or comfortable shared accommodation?"
+          - If asked about LOCATION: Ask "Have you experienced the physiological benefits of forest bathing (phytoncides) before?"
+          - General: Ask "On a scale of 1-10, how high is your current cortisol load?"
 
         CONTEXT:
-        - Science-First: Engineering approach to wellbeing. No fluff.
-        - Neurobiology of Stress: Focus on cortisol and nervous system regulation.
-        - Location: Kochi, Japan (cedar forests, onsens).
+        - Location: Kochi, Japan (leveraging phytoncides in cedar forests and thermoregulation in onsens).
         - Price: $2,890 (Single), $2,390 (Shared).
 
         GUIDELINES:
-        - Concise answers (<50 words).
-        - ALWAYS ASK A FOLLOW-UP QUESTION to clarify needs.
-        - Frame meditation as "attentional control training".
+        - Keep answers short.
+        - Always end with a question.
       `;
 
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -705,7 +741,120 @@ const VoiceAssistant: React.FC<{ content: ContentText; lang: Language }> = ({ co
 };
 
 
-// 3. Main App Component
+// 4. Hero Component
+const Hero: React.FC<{ 
+  t: ContentText; 
+  toggleModal: () => void; 
+  setIsVideoModalOpen: (open: boolean) => void; 
+}> = ({ t, toggleModal, setIsVideoModalOpen }) => {
+  const videoRef = useRef<HTMLDivElement>(null);
+  const spotlightRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!videoRef.current) return;
+
+      const isMobile = window.innerWidth < 768;
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (isMobile || prefersReducedMotion) {
+        videoRef.current.style.transform = 'translate3d(0, 0, 0)';
+        return;
+      }
+
+      const scrolled = window.scrollY;
+      videoRef.current.style.transform = `translate3d(0, ${scrolled * 0.15}px, 0)`;
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (spotlightRef.current) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      spotlightRef.current.style.background = `radial-gradient(800px circle at ${x}px ${y}px, rgba(255,255,255,0.08), transparent 40%)`;
+    }
+  };
+
+  return (
+    <header 
+      className="relative h-screen min-h-[800px] flex items-center justify-center overflow-hidden bg-stone-900 cursor-default"
+      onMouseMove={handleMouseMove}
+    >
+        {/* Parallax Video Container */}
+        <div 
+            ref={videoRef} 
+            className="absolute inset-0 z-0 will-change-transform"
+        >
+          <video autoPlay loop muted playsInline className="w-full h-full object-cover scale-110">
+            <source src={VIDEO_BG_MOBILE_URL} media="(max-width: 768px)" />
+            <source src={VIDEO_BG_URL} />
+          </video>
+          {/* Overlays */}
+          <div className="absolute inset-0 bg-stone-900/30"></div>
+          <div className="absolute inset-0 bg-gradient-to-t from-stone-50 dark:from-stone-950 via-transparent to-stone-900/40"></div>
+        </div>
+
+        {/* Interactive Spotlight */}
+        <div 
+          ref={spotlightRef}
+          className="absolute inset-0 z-1 pointer-events-none transition-opacity duration-500"
+          style={{ background: 'radial-gradient(800px circle at 50% 50%, rgba(255,255,255,0.08), transparent 40%)' }}
+        />
+
+        {/* Content */}
+        <div className="relative z-20 max-w-5xl mx-auto px-4 text-center mt-20">
+          <Reveal>
+            <div className="inline-flex items-center px-4 py-1.5 rounded-full border border-white/30 bg-white/10 backdrop-blur-md text-white text-sm font-medium mb-8">
+              <Calendar className="w-4 h-4 mr-2" />
+              {t.hero.date}
+            </div>
+          </Reveal>
+          
+          <Reveal delay={100}>
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-serif font-medium text-white tracking-tight leading-[1.1] mb-8 drop-shadow-lg">
+              {t.hero.titlePrefix} <br/>
+              <span className="italic font-light text-brand-100">{t.hero.titleHighlight}</span>
+            </h1>
+          </Reveal>
+
+          <Reveal delay={200}>
+            <p className="text-lg md:text-2xl text-stone-100 max-w-2xl mx-auto leading-relaxed font-light mb-12 drop-shadow-md opacity-90">
+              {t.hero.desc}
+            </p>
+          </Reveal>
+          
+          <Reveal delay={300}>
+            <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
+              <button onClick={toggleModal} className="w-full sm:w-auto px-10 py-5 bg-brand-600 hover:bg-brand-700 text-white rounded-full font-semibold transition-all duration-300 shadow-xl hover:shadow-2xl hover:-translate-y-1">
+                {t.hero.ctaApply}
+              </button>
+              
+              <button
+                onClick={() => setIsVideoModalOpen(true)}
+                className="w-full sm:w-auto px-10 py-5 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/30 text-white rounded-full font-semibold transition-all duration-300 flex items-center justify-center gap-3 group"
+              >
+                <div className="w-6 h-6 rounded-full bg-white text-stone-900 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Play size={10} fill="currentColor" />
+                </div>
+                {t.hero.watchVideo}
+              </button>
+            </div>
+          </Reveal>
+        </div>
+        
+        {/* Scroll Indicator */}
+        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce opacity-70 z-20">
+           <div className="w-[1px] h-16 bg-gradient-to-b from-transparent via-white to-transparent"></div>
+        </div>
+    </header>
+  );
+};
+
+
+// 5. Main App Component
 const BurnoutLanding = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -714,6 +863,17 @@ const BurnoutLanding = () => {
   const [lang, setLang] = useState<Language>('RU');
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  
+  // Loading State
+  const [isLoading, setIsLoading] = useState(true);
+  const [fadeOut, setFadeOut] = useState(false);
+
+  useEffect(() => {
+    // Simulate loading sequence
+    const timer1 = setTimeout(() => setFadeOut(true), 2200);
+    const timer2 = setTimeout(() => setIsLoading(false), 3200);
+    return () => { clearTimeout(timer1); clearTimeout(timer2); };
+  }, []);
 
   const t = TRANSLATIONS[lang];
 
@@ -733,6 +893,9 @@ const BurnoutLanding = () => {
   return (
     <div className={`min-h-screen font-sans transition-colors duration-700 ${isDarkMode ? 'dark bg-stone-950' : 'bg-stone-50'}`}>
       
+      {/* Preloader */}
+      {isLoading && <Preloader fadeOut={fadeOut} />}
+
       {/* Navigation */}
       <nav className={`fixed w-full z-50 transition-all duration-500 border-b ${
         scrolled 
@@ -852,63 +1015,7 @@ const BurnoutLanding = () => {
       </nav>
 
       {/* Hero Section */}
-      <header className="relative h-screen min-h-[800px] flex items-center justify-center overflow-hidden">
-        {/* Background Video */}
-        <div className="absolute inset-0 z-0">
-          <video autoPlay loop muted playsInline className="w-full h-full object-cover scale-105 animate-float-slow" aria-hidden="true">
-            <source src={VIDEO_BG_MOBILE_URL} media="(max-width: 768px)" />
-            <source src={VIDEO_BG_URL} />
-          </video>
-          {/* Enhanced Gradient Overlay for readability */}
-          <div className="absolute inset-0 bg-stone-900/30"></div>
-          <div className="absolute inset-0 bg-gradient-to-t from-stone-50 dark:from-stone-950 via-transparent to-stone-900/40"></div>
-        </div>
-
-        <div className="relative z-10 max-w-5xl mx-auto px-4 text-center mt-20">
-          <Reveal>
-            <div className="inline-flex items-center px-4 py-1.5 rounded-full border border-white/30 bg-white/10 backdrop-blur-md text-white text-sm font-medium mb-8">
-              <Calendar className="w-4 h-4 mr-2" />
-              {t.hero.date}
-            </div>
-          </Reveal>
-          
-          <Reveal delay={100}>
-            <h1 className="text-5xl md:text-7xl lg:text-8xl font-serif font-medium text-white tracking-tight leading-[1.1] mb-8 drop-shadow-lg">
-              {t.hero.titlePrefix} <br/>
-              <span className="italic font-light text-brand-100">{t.hero.titleHighlight}</span>
-            </h1>
-          </Reveal>
-
-          <Reveal delay={200}>
-            <p className="text-lg md:text-2xl text-stone-100 max-w-2xl mx-auto leading-relaxed font-light mb-12 drop-shadow-md opacity-90">
-              {t.hero.desc}
-            </p>
-          </Reveal>
-          
-          <Reveal delay={300}>
-            <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
-              <button onClick={toggleModal} className="w-full sm:w-auto px-10 py-5 bg-brand-600 hover:bg-brand-700 text-white rounded-full font-semibold transition-all duration-300 shadow-xl hover:shadow-2xl hover:-translate-y-1">
-                {t.hero.ctaApply}
-              </button>
-              
-              <button
-                onClick={() => setIsVideoModalOpen(true)}
-                className="w-full sm:w-auto px-10 py-5 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/30 text-white rounded-full font-semibold transition-all duration-300 flex items-center justify-center gap-3 group"
-              >
-                <div className="w-6 h-6 rounded-full bg-white text-stone-900 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Play size={10} fill="currentColor" />
-                </div>
-                {t.hero.watchVideo}
-              </button>
-            </div>
-          </Reveal>
-        </div>
-        
-        {/* Scroll Indicator */}
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce opacity-70">
-           <div className="w-[1px] h-16 bg-gradient-to-b from-transparent via-white to-transparent"></div>
-        </div>
-      </header>
+      <Hero t={t} toggleModal={toggleModal} setIsVideoModalOpen={setIsVideoModalOpen} />
 
       {/* Stats Banner */}
       <section className="relative z-20 -mt-16 max-w-6xl mx-auto px-4">
